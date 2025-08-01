@@ -167,12 +167,16 @@
     </div>
 
     <script>
-      // Simula um banco de conversas (client-side)
-      const conversas = {};
-      let acessoLiberado = false;
-      let isCreator = false;
+      // Inicializar o Supabase
+      const supabaseUrl = "https://mmqrqxpnxyqabeftopgw.supabase.co"; // substitua
+      const supabaseKey =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tcXJxeHBueHlxYWJlZnRvcGd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxNDg1ODAsImV4cCI6MjA2NzcyNDU4MH0.1vqxTR3J_ccEVipmi--Sdbf971lOw9FM8pAd2tiqceA"; // substitua
+      const supabase = supabase.createClient(supabaseUrl, supabaseKey);
 
       // Mapa do alfabeto brasileiro (A=1, B=2, ..., Z=26)
+      const conversas = {};
+      let acessoLiberado = false;
+      let idConversaAtual = "";
       const alfabeto = {
         a: 1,
         b: 2,
@@ -202,99 +206,117 @@
         z: 26,
       };
 
-      // Mapa inverso para decriptação (1=A, 2=B, ..., 26=Z)
-      const alfabetoInverso = Object.fromEntries(
-        Object.entries(alfabeto).map(([letra, numero]) => [numero, letra])
-      );
-
       function criarConversa() {
         const idConversa = document.getElementById("new-id").value.trim();
-        if (!idConversa) {
-          alert("Por favor, insira um ID para criar a conversa.");
-          return;
-        }
-        if (conversas[idConversa]) {
-          alert("Este ID já está em uso. Escolha outro.");
-          return;
-        }
-        conversas[idConversa] = true;
-        isCreator = true;
+        if (!idConversa) return alert("Digite um ID");
+        idConversaAtual = idConversa;
+
+        document.getElementById("conversation-id").value = idConversa;
+        document.getElementById("conversation-id").disabled = true;
+        document.getElementById("create-conversation").style.display = "none";
+        document.getElementById("controls").style.display = "flex";
         document.getElementById(
           "conversation-id-display"
         ).textContent = `ID da Conversa: ${idConversa}`;
         document.getElementById("conversation-id-display").style.display =
           "block";
-        document.getElementById("create-conversation").style.display = "none";
-        document.getElementById("conversation-id").value = idConversa;
-        document.getElementById("conversation-id").disabled = true;
         acessoLiberado = true;
-        document.getElementById("controls").style.display = "flex";
-        console.log("Conversa criada:", { idConversa });
+
+        escutarMensagensTempoReal(idConversaAtual);
+        carregarMensagens(idConversaAtual);
       }
 
       function validarAcesso() {
         const idConversa = document
           .getElementById("conversation-id")
           .value.trim();
-        console.log("Validando acesso:", { idConversa });
-        if (conversas[idConversa]) {
-          acessoLiberado = true;
-          document.getElementById("controls").style.display = "flex";
-          document.getElementById("conversation-id").disabled = true;
-          document.getElementById("create-conversation").style.display = "none";
-          if (isCreator) {
-            document.getElementById("conversation-id-display").style.display =
-              "block";
-          }
-          console.log("Acesso liberado!");
-        } else {
-          alert("ID da conversa incorreto ou não existe.");
-          console.log("Acesso negado!");
-        }
+        if (!idConversa) return alert("Digite o ID");
+
+        idConversaAtual = idConversa;
+        document.getElementById("conversation-id").disabled = true;
+        document.getElementById("create-conversation").style.display = "none";
+        document.getElementById("controls").style.display = "flex";
+        document.getElementById(
+          "conversation-id-display"
+        ).textContent = `ID da Conversa: ${idConversa}`;
+        document.getElementById("conversation-id-display").style.display =
+          "block";
+        acessoLiberado = true;
+
+        escutarMensagensTempoReal(idConversaAtual);
+        carregarMensagens(idConversaAtual);
       }
 
-      function enviarMensagem() {
-        if (!acessoLiberado) {
-          alert("Acesso não liberado. Valide o ID da conversa.");
-          console.log("Envio bloqueado: acesso não liberado");
-          return;
-        }
+      async function enviarMensagem() {
+        if (!acessoLiberado) return alert("Valide a conversa antes");
 
-        const idConversa = document
-          .getElementById("conversation-id")
-          .value.trim();
         const texto = document.getElementById("mensagem").value.trim();
+        if (!texto) return alert("Mensagem vazia");
 
-        if (!idConversa) {
-          alert("ID da conversa é obrigatório.");
-          console.log("Envio bloqueado: ID ausente");
-          return;
-        }
+        document.getElementById("mensagem").value = "";
 
-        if (texto) {
-          adicionarMensagem("Você", texto, "user");
-          document.getElementById("mensagem").value = "";
-        } else {
-          alert("Digite uma mensagem para enviar.");
-          console.log("Envio bloqueado: mensagem vazia");
-        }
+        await supabase.from("mensagens").insert([
+          {
+            texto,
+            autor: "Você",
+            conversa: idConversaAtual,
+          },
+        ]);
       }
 
-      function adicionarMensagem(origem, conteudo, classe) {
+      function adicionarMensagem(autor, conteudo, classe) {
         const chatBox = document.getElementById("chat-box");
         const div = document.createElement("div");
         div.className = `msg ${classe}`;
-        div.textContent = `${origem}: ${conteudo}`;
+        div.textContent = `${autor}: ${conteudo}`;
         chatBox.appendChild(div);
         chatBox.scrollTop = chatBox.scrollHeight;
-        console.log("Mensagem adicionada:", { origem, conteudo, classe });
 
         setTimeout(() => {
           if (chatBox.contains(div)) div.remove();
-          console.log("Mensagem removida:", conteudo);
         }, 15000);
       }
 
+      async function carregarMensagens(conversaId) {
+        const { data } = await supabase
+          .from("mensagens")
+          .select("*")
+          .eq("conversa", conversaId)
+          .order("id", { ascending: true });
+
+        data.forEach((msg) => {
+          adicionarMensagem(
+            msg.autor,
+            msg.texto,
+            msg.autor === "Você" ? "user" : "recebida"
+          );
+        });
+      }
+
+      function escutarMensagensTempoReal(conversaId) {
+        supabase
+          .channel("mensagens-channel")
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "mensagens",
+              filter: `conversa=eq.${conversaId}`,
+            },
+            (payload) => {
+              const { texto, autor } = payload.new;
+              adicionarMensagem(
+                autor,
+                texto,
+                autor === "Você" ? "user" : "recebida"
+              );
+            }
+          )
+          .subscribe();
+      }
+
+      // Eventos de teclado
       document
         .getElementById("mensagem")
         .addEventListener("keypress", function (e) {
